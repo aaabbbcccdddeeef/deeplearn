@@ -8,7 +8,7 @@ class PoetryDataset(Dataset):
     def __getitem__(self, index):
         return self.data["data"][index]
     def getData(self):
-        return self.data["data"],self.data["ix2word"],self.data["word2ix"]
+        return self.data["data"],self.data["ix2word"].item(),self.data["word2ix"].item()
 if __name__=="__main__":
     datas=PoetryDataset("./tang.npz").data
     # data是一个57580 * 125的numpy数组，即总共有57580首诗歌，每首诗歌长度为125个字符（不足125补空格，超过125的丢弃）

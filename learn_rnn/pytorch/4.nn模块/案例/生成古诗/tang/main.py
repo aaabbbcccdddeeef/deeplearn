@@ -4,32 +4,39 @@ import torch.nn as nn
 import torch as t
 from data.dataset import PoetryDataset
 from models.model import Net
-num_epochs=10
+num_epochs=5
 data_root="./data/tang.npz"
-batch_size=128
+batch_size=10
 def train(**kwargs):
     datasets=PoetryDataset(data_root)
     data,ix2word,word2ix=datasets.getData()
+    lenData=len(data)
     data = t.from_numpy(data)
     dataloader = t.utils.data.DataLoader(data, batch_size=batch_size, shuffle=True, num_workers=1)
     #总共有8293的词。模型定义：vocab_size, embedding_dim, hidden_dim = 8293 * 128 * 256
-    model=Net(len(word2ix.item()),128,256)
+    model=Net(len(word2ix),128,256)
     #定义损失函数
     criterion = nn.CrossEntropyLoss()
-    #model=model.cuda()
+    model=model.cuda()
     optimizer = t.optim.Adam(model.parameters(), lr=1e-3)
+    iteri=0
+    filename = "example.txt"
+    totalIter=lenData*num_epochs/batch_size
     for epoch in range(num_epochs):  # 最大迭代次数为8
         for i, data in enumerate(dataloader):  # 一批次数据 128*125
-            data = data.long().contiguous()
-            #data = data.cuda()
+            data = data.long().transpose(0,1).contiguous() .cuda()
             optimizer.zero_grad()
             input, target = (data[:-1, :]), (data[1:, :])
             output, _ = model(input)
             loss = criterion(output, target.view(-1))  # torch.Size([15872, 8293]), torch.Size([15872])
             loss.backward()
             optimizer.step()
-            if (1 + i) % 575 == 0:  # 每575个batch可视化一次
-                print(str(i) + ':' + generate(model, '床前明月光', ix2word, word2ix))
+            iteri+=1
+            if(iteri%500==0):
+                print(str(iteri+1)+"/"+str(totalIter)+"epoch")
+            if (1 + i) % 1000 == 0:  # 每575个batch可视化一次
+                with open(filename, "a") as file:
+                    file.write(str(i) + ':' + generate(model, '床前明月光', ix2word, word2ix)+"\n")
     t.save(model.state_dict(), './checkpoints/model_poet_2.pth')
 def generate(model, start_words, ix2word, word2ix):     # 给定几个词，根据这几个词生成一首完整的诗歌
     txt = []
@@ -52,6 +59,51 @@ def generate(model, start_words, ix2word, word2ix):     # 给定几个词，根�
         if w == '<EOP>':
             break
     return ''.join(txt)
+#生成藏头诗，每句的开头组成一个词语
+def gen_acrostic(model, start_words, ix2word, word2ix):
+    result = []
+    txt = []
+    for word in start_words:
+        txt.append(word)
+    input = (
+        t.Tensor([word2ix['<START>']]).view(1, 1).long())  # tensor([8291.]) → tensor([[8291.]]) → tensor([[8291]])
+    input = input.cuda()
+    hidden = None
+
+    num = len(txt)
+    index = 0
+    pre_word = '<START>'
+    for i in range(48):
+        output, hidden = model(input, hidden)
+        top_index = output.data[0].topk(1)[1][0]
+        w = ix2word[top_index.item()]
+
+        if (pre_word in {'。', '!', '<START>'}):
+            if index == num:
+                break
+            else:
+                w = txt[index]
+                index += 1
+                input = (input.data.new([word2ix[w]])).view(1,1)
+        else:
+            input = (input.data.new([word2ix[w]])).view(1,1)
+        result.append(w)
+        pre_word = w
+    return ''.join(result)
+
+def test():
+    datasets = PoetryDataset(data_root)
+    data, ix2word, word2ix = datasets.getData()
+    modle = Net(len(word2ix), 128, 256)  # 模型定义：vocab_size, embedding_dim, hidden_dim —— 8293 * 128 * 256
+    if t.cuda.is_available() == True:
+        modle.cuda()
+        modle.load_state_dict(t.load('./checkpoints/model_poet_2.pth'))
+        modle.eval()
+        # txt = generate(modle, '床前明月光', ix2word, word2ix)
+        # print(txt)
+        name = input("请输入您的开头：")
+        txt = generate(modle, name, ix2word, word2ix)
+        print(txt)
 
 if __name__=="__main__":
     fire.Fire()
